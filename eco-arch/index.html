@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Sylvan | Sustainable Architecture</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.29/bundled/lenis.min.js"></script>
+    
+    <style>
+        :root {
+            --bg: #e5e0d8; /* Warm concrete/sand */
+            --alt-bg: #d0c8b6; /* darker sand */
+            --text-main: #2a3028; /* deep forest green almost black */
+            --text-accent: #5c6e54; /* muted leaf */
+            --font-serif: 'Playfair Display', serif;
+            --font-sans: 'Outfit', sans-serif;
+        }
+
+        body {
+            margin: 0; padding: 0; background-color: var(--bg); color: var(--text-main);
+            font-family: var(--font-sans); overflow-x: hidden;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 4rem; }
+
+        header { padding: 3rem 4rem; display: flex; justify-content: space-between; align-items: center; position: fixed; top: 0; left: 0; width: 100%; box-sizing: border-box; z-index: 100; mix-blend-mode: color-burn; }
+        .logo { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+        .nav-links th { font-weight: 400; }
+        
+        /* Typography */
+        h1 { font-family: var(--font-serif); font-size: clamp(4rem, 10vw, 12rem); font-weight: 400; line-height: 0.9; margin: 0; letter-spacing: -0.04em; }
+        h1 i { color: var(--text-accent); }
+        h2 { font-family: var(--font-serif); font-size: 3rem; font-weight: 400; }
+        p { font-size: 1.2rem; line-height: 1.6; font-weight: 300; max-width: 500px; }
+
+        /* Sections */
+        .hero { height: 100vh; display: flex; flex-direction: column; justify-content: center; position: relative; padding: 0 4rem; }
+        
+        .floating-parallax { position: absolute; background: var(--alt-bg); }
+        .fp-1 { top: 15%; right: 10%; width: 300px; height: 400px; z-index: -1; }
+        .fp-2 { bottom: 10%; left: 20%; width: 400px; height: 250px; z-index: -1; background: #c2bba8; }
+
+        .content-section { padding: 15rem 0; position: relative; }
+        
+        .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; }
+        
+        /* Image wrappers for parallax masking */
+        .img-wrapper { overflow: hidden; height: 100%; min-height: 600px; position: relative; background: var(--alt-bg); border-radius: 4px; }
+        /* The inner div holds the background to be parallaxed */
+        .img-inner { position: absolute; top: -20%; left: 0; width: 100%; height: 140%; background: #444; }
+
+        .text-block { padding: 4rem; }
+        .text-block span { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--text-accent); font-weight: 600; display: block; margin-bottom: 2rem; }
+
+        /* Minimal lines */
+        .line { width: 100%; height: 1px; background: rgba(42, 48, 40, 0.2); margin: 4rem 0; }
+
+        .back-link { border: 1px solid var(--text-main); color: var(--text-main); text-decoration: none; padding: 0.5rem 1.5rem; border-radius: 30px; font-size: 0.8rem; transition: background 0.3s, color 0.3s; }
+        .back-link:hover { background: var(--text-main); color: var(--bg); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">Sylvan.</div>
+        <a href="../portfolio.html" class="back-link">Return to Portfolio</a>
+    </header>
+
+    <div id="smooth-wrapper">
+
+        <section class="hero">
+            <h1 data-speed="0.8">Living<br><i>Structures</i></h1>
+            <p data-speed="1.2">Integrating modern brutalism with passive organic cooling and sustainable material sourcing.</p>
+            
+            <div class="floating-parallax fp-1" data-speed="0.4"></div>
+            <div class="floating-parallax fp-2" data-speed="1.5"></div>
+        </section>
+
+        <section class="content-section container">
+            <div class="split-grid">
+                <div class="text-block" data-speed="0.9">
+                    <span>01 / The Ethos</span>
+                    <h2>Passive Harmony.</h2>
+                    <p>We do not clear the land to build; we build the structure to allow the land to traverse through it. Eliminating mechanical cooling through aggressive vernacular airflow tunneling.</p>
+                </div>
+                <div class="img-wrapper">
+                    <!-- The inner element translates at a different speed than the document -->
+                    <div class="img-inner" id="pg1"></div>
+                </div>
+            </div>
+            
+            <div class="line"></div>
+
+            <div class="split-grid" style="direction: rtl;">
+                <div class="text-block" data-speed="1.1" style="direction: ltr;">
+                    <span>02 / Materials</span>
+                    <h2>Rammed Earth.</h2>
+                    <p>Utilizing the exact soil excavated from the site foundation to compress structural walls. Zero transport emissions. Impeccable thermal massing.</p>
+                </div>
+                <div class="img-wrapper">
+                    <div class="img-inner" id="pg2" style="background:#8f8c81;"></div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        // Lenis Smooth Scroll Setup
+        const lenis = new Lenis({
+            duration: 1.5,
+            easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+            direction: 'vertical'
+        });
+        
+        let scrollY = 0;
+        lenis.on('scroll', (e) => {
+            scrollY = e.scroll;
+            
+            // Native Custom Parallax
+            document.querySelectorAll('[data-speed]').forEach(el => {
+                const speed = parseFloat(el.getAttribute('data-speed'));
+                // Speed 1 is normal static flow. < 1 is slower (moves up slower). > 1 is faster.
+                // We calculate an offset based on how far we scrolled.
+                const offset = scrollY * (1 - speed);
+                el.style.transform = `translateY(${offset}px)`;
+            });
+
+            // Image Parallax (moves the internal background div up or down opposite to scroll direction)
+            const img1 = document.getElementById('pg1');
+            const img2 = document.getElementById('pg2');
+            
+            // Assuming image height is 140% (-20% to top). We shift the background position based on scroll.
+            // Divide by large numbers to keep it subtle
+            img1.style.transform = `translateY(${scrollY * 0.15}px)`;
+            img2.style.transform = `translateY(${scrollY * 0.1}px)`;
+        });
+
+        function raf(time) {
+            lenis.raf(time);
+            requestAnimationFrame(raf);
+        }
+        requestAnimationFrame(raf);
+    </script>
+</body>
+</html>

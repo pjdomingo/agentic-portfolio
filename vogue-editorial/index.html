@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Vogue | High Fashion Editorial</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,700&family=Jost:wght@300;400&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-1: #fdfaf6; /* Warm beige */
+            --bg-2: #e8dbce; /* Darker pastel */
+            --bg-3: #1a1a1a;
+            --text-main: #2b2b2b;
+            --serif: 'Bodoni Moda', serif;
+            --sans: 'Jost', sans-serif;
+        }
+
+        body {
+            margin: 0; padding: 0; background-color: var(--bg-1); color: var(--text-main);
+            font-family: var(--sans);
+        }
+
+        .back-link { position: fixed; top: 2rem; left: 2rem; color: var(--text-main); text-decoration: none; border-bottom: 1px solid var(--text-main); padding-bottom: 2px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 400; z-index: 1000; mix-blend-mode: difference; }
+
+        /* The core Z-index Sticky Stacking Engine */
+        .page {
+            width: 100vw; height: 100vh;
+            position: sticky; top: 0;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            overflow: hidden;
+            box-shadow: 0 -20px 50px rgba(0,0,0,0.1);
+        }
+
+        /* Enormous overlapping typography */
+        .masthead {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-family: var(--serif); font-size: clamp(8rem, 25vw, 30rem);
+            line-height: 0.8; font-weight: 700; color: #d5c8bb;
+            text-align: center; white-space: nowrap; z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Layout Block */
+        .content { z-index: 2; display: flex; width: 100%; max-width: 1400px; padding: 0 4rem; justify-content: space-between; align-items: center; }
+        
+        .text-col { max-width: 400px; }
+        .text-col h2 { font-family: var(--serif); font-size: 4rem; margin: 0 0 1rem 0; line-height: 1; }
+        .text-col p { font-size: 1.1rem; line-height: 1.6; font-weight: 300; }
+
+        /* Fake 'Editorial Imagery' via CSS Abstract Blocks representing Photos */
+        .photo-block { width: 400px; height: 600px; background: #333; position: relative; }
+        .photo-block.p1 { background: radial-gradient(circle at 50% 50%, #444, #111); }
+        .photo-block.p2 { background: linear-gradient(135deg, #a89f91, #8f8472); height: 500px; width: 350px; }
+
+        /* Color variations per stick page */
+        #page1 { background: var(--bg-1); z-index: 1; }
+        #page2 { background: var(--bg-2); z-index: 2; }
+        #page3 { background: var(--bg-3); z-index: 3; color: #fff; }
+        #page3 .masthead { color: #222; }
+    </style>
+</head>
+<body>
+
+    <a href="../portfolio.html" class="back-link">Back to Portfolio</a>
+
+    <!-- Page 1 -->
+    <div class="page" id="page1">
+        <div class="masthead">SPRING</div>
+        <div class="content">
+            <div class="text-col">
+                <h2>Avant<br>Garde.</h2>
+                <p>An exploration of form, function, and fabric woven directly into the structural architecture of the DOM.</p>
+            </div>
+            <div class="photo-block p1"></div>
+        </div>
+    </div>
+
+    <!-- Page 2 -->
+    <div class="page" id="page2">
+        <div class="masthead">SILK</div>
+        <div class="content" style="flex-direction: row-reverse;">
+            <div class="text-col">
+                <h2>Fabricated<br>Reality.</h2>
+                <p>Scroll forces physical overlap. Z-index planes physically slide atop one another representing heavy glossy parchment.</p>
+            </div>
+            <div class="photo-block p2"></div>
+        </div>
+    </div>
+
+    <!-- Page 3 -->
+    <div class="page" id="page3">
+        <div class="masthead">NOIR</div>
+        <div class="content" style="justify-content: center; text-align: center;">
+            <div class="text-col" style="max-width: 600px;">
+                <h2 style="font-size: 6rem;">The End.</h2>
+                <p style="font-size: 1.4rem;">Scroll back up to physically lift the pages back off.</p>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

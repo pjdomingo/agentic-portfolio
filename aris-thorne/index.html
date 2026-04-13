@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Aris Thorne | Cinematic Biography</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/studio-freight/lenis@1.0.29/bundled/lenis.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #ffffff;
+            --accent: #9333ea;
+            --text-main: #0a0a0a;
+            --glass-bg: rgba(255, 255, 255, 0.4);
+            --glass-border: rgba(147, 51, 234, 0.2);
+        }
+        
+        body { margin: 0; padding: 0; background-color: var(--bg); color: var(--text-main); font-family: 'Outfit', sans-serif; overflow-x: hidden; cursor: none; }
+        
+        #webgl-canvas { position: fixed; top: 0; left: 0; z-index: 1; pointer-events: none; opacity: 0.8; }
+        
+        main { position: relative; z-index: 2; }
+        
+        /* Custom Cursor */
+        .cursor { width: 15px; height: 15px; background: var(--accent); border-radius: 50%; position: fixed; top: 0; left: 0; pointer-events: none; z-index: 9999; transform: translate(-50%, -50%); transition: width 0.3s, height 0.3s, background 0.3s, opacity 0.3s; mix-blend-mode: multiply; }
+        .cursor-trail { width: 50px; height: 50px; border: 1px solid var(--accent); border-radius: 50%; position: fixed; top: 0; left: 0; pointer-events: none; z-index: 9998; transform: translate(-50%, -50%); transition: width 0.4s, height 0.4s, background 0.4s; }
+        
+        body:hover .cursor { width: 8px; height: 8px; }
+        @media (pointer: coarse) { * { cursor: auto !important; } .cursor, .cursor-trail { display: none !important; } }
+
+        .nav-header { position: fixed; top: 0; left: 0; width: 100%; padding: 2rem 4rem; display: flex; justify-content: space-between; align-items: center; z-index: 100; mix-blend-mode: difference; color: #fff; box-sizing: border-box; }
+        .nav-header a { color: #fff; text-decoration: none; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1.5rem; border-radius: 30px; transition: background 0.3s, color 0.3s; }
+        .nav-header a:hover { background: #fff; color: #000; }
+
+        /* Typography & Layout */
+        .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+        
+        .hero { min-height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; }
+        .hero h1 { font-size: clamp(4rem, 12vw, 14rem); font-weight: 900; line-height: 0.8; letter-spacing: -0.06em; margin: 0; text-transform: uppercase; mix-blend-mode: difference; color: #fff; }
+        .hero h1 span { display: block; font-size: 0.3em; font-weight: 300; letter-spacing: 0.5em; color: var(--accent); margin-top: 1rem; }
+
+        .timeline-section { padding: 15rem 0; }
+        
+        .timeline-item { display: flex; justify-content: flex-end; margin-bottom: 15rem; perspective: 1000px; }
+        .timeline-item:nth-child(even) { justify-content: flex-start; }
+        
+        .timeline-card { background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); padding: 4rem; border-radius: 24px; max-width: 600px; box-shadow: 0 20px 40px rgba(0,0,0,0.05); transform-style: preserve-3d; transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .timeline-card:hover { transform: translateZ(50px) scale(1.02); }
+        
+        .year { font-size: 8rem; font-weight: 900; color: rgba(147, 51, 234, 0.1); position: absolute; top: -4rem; left: -2rem; z-index: -1; transform: translateZ(-20px); }
+        h3 { font-size: 2.5rem; font-weight: 700; margin: 0 0 1rem 0; letter-spacing: -0.02em; }
+        p { font-size: 1.1rem; line-height: 1.6; font-weight: 300; color: #444; margin: 0; }
+    </style>
+</head>
+<body>
+    <div class="cursor-trail"></div>
+    <div class="cursor"></div>
+
+    <nav class="nav-header">
+        <div style="font-weight: 900; font-size: 1.5rem; letter-spacing: -0.05em;">AT.</div>
+        <a href="../portfolio.html">Close Biography</a>
+    </nav>
+
+    <canvas id="webgl-canvas"></canvas>
+
+    <main id="smooth-wrapper">
+        <section class="hero">
+            <div class="container">
+                <h1>Aris<br>Thorne<span>Creative Director</span></h1>
+            </div>
+        </section>
+
+        <section class="timeline-section container">
+            <div class="timeline-item">
+                <div class="timeline-card">
+                    <div class="year">2022</div>
+                    <h3>Lead Designer at Frame</h3>
+                    <p>Spearheaded the UI/UX direction for a flagship e-commerce platform, increasing user retention by 40% through minimalist interaction design and an overhauled layout architecture.</p>
+                </div>
+            </div>
+            
+            <div class="timeline-item">
+                <div class="timeline-card">
+                    <div class="year">2024</div>
+                    <h3>Creative Director, Studio V</h3>
+                    <p>Managed a team of 15 designers to execute global brand campaigns spanning physical and digital domains. Focused on high-fidelity motion graphics and award-winning spatial web design.</p>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-card">
+                    <div class="year">2026</div>
+                    <h3>Independent Consultant</h3>
+                    <p>Transitioned into autonomous design consultancy. Partnering with elite startups to craft zero-compromise brand identities, leveraging cutting-edge development tools to rapidly deploy stunning web experiences.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Custom Magnetic Cursor Logic
+        const cursor = document.querySelector('.cursor');
+        const cursorTrail = document.querySelector('.cursor-trail');
+        let mouseX = window.innerWidth / 2;
+        let mouseY = window.innerHeight / 2;
+        let trailX = mouseX;
+        let trailY = mouseY;
+        
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            cursor.style.transform = `translate(${mouseX}px, ${mouseY}px)`;
+        });
+
+        // Smooth trail interpolator
+        function renderCursor() {
+            trailX += (mouseX - trailX) * 0.1;
+            trailY += (mouseY - trailY) * 0.1;
+            cursorTrail.style.transform = `translate(${trailX}px, ${trailY}px)`;
+            requestAnimationFrame(renderCursor);
+        }
+        renderCursor();
+
+        // Lenis Cinematic Scroll
+        const lenis = new Lenis({
+            duration: 1.2,
+            easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+            direction: 'vertical'
+        });
+        
+        let scrollY = 0;
+        lenis.on('scroll', (e) => {
+            scrollY = e.scroll;
+        });
+
+        function raf(time) {
+            lenis.raf(time);
+            requestAnimationFrame(raf);
+        }
+        requestAnimationFrame(raf);
+
+        // WebGL Kinetic Liquid Mesh Engine
+        const canvas = document.getElementById('webgl-canvas');
+        const scene = new THREE.Scene();
+        // Bright fog to fade into the white background
+        scene.fog = new THREE.FogExp2(0xffffff, 0.03); 
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 15;
+
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // Create the complex wireframe knot (Shattered Diamond / Abstract Core)
+        const geometry = new THREE.TorusKnotGeometry(4.5, 1.5, 256, 32);
+        
+        // Custom material with heavy vivid neon mapping against white
+        const material = new THREE.MeshBasicMaterial({ 
+            color: 0x9333ea, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.15 
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+
+        // Second inverted mesh to create a dense Moiré interference pattern
+        const material2 = new THREE.MeshBasicMaterial({ 
+            color: 0x6b21a8, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.1 
+        });
+        const mesh2 = new THREE.Mesh(geometry, material2);
+        mesh2.scale.set(1.05, 1.05, 1.05);
+        scene.add(mesh2);
+
+        // Original vertex array for liquid math offsets
+        const originalPositions = [];
+        const positionAttribute = geometry.attributes.position;
+        for (let i = 0; i < positionAttribute.count; i++) {
+            originalPositions.push(
+                new THREE.Vector3(positionAttribute.getX(i), positionAttribute.getY(i), positionAttribute.getZ(i))
+            );
+        }
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+            
+            // The scroll position natively drives the visual distortion physics
+            const violence = 0.2 + (scrollY * 0.0005) + Math.abs((mouseX / window.innerWidth) - 0.5) * 2.0;
+
+            // Manipulate mesh vertices procedurally mimicking a vertex shader
+            for (let i = 0; i < positionAttribute.count; i++) {
+                const p = originalPositions[i];
+                // 3D Sine Wave interference
+                const noise = Math.sin(p.x * 2 + time * 2) * Math.cos(p.y * 2 + time * 2) * violence;
+                
+                // Project vertex natively outward along its normal approximation
+                const normal = p.clone().normalize();
+                
+                positionAttribute.setXYZ(i, 
+                    p.x + normal.x * noise, 
+                    p.y + normal.y * noise, 
+                    p.z + normal.z * noise
+                );
+            }
+            positionAttribute.needsUpdate = true;
+            
+            // Base rotational spin
+            mesh.rotation.x = time * 0.2;
+            mesh.rotation.y = time * 0.3;
+            
+            mesh2.rotation.x = -time * 0.15;
+            mesh2.rotation.y = -time * 0.25;
+
+            // Accelerate object scale and rotation heavily on scroll
+            const scaleTarget = 1 + (scrollY * 0.0015);
+            mesh.scale.set(scaleTarget, scaleTarget, scaleTarget);
+            mesh.position.y = (scrollY * 0.005); // Float upward slightly
+
+            // Mouse parallax mapping
+            const targetX = (mouseX / window.innerWidth - 0.5) * 5;
+            const targetY = (mouseY / window.innerHeight - 0.5) * 5;
+            camera.position.x += (targetX - camera.position.x) * 0.05;
+            camera.position.y += (-targetY - camera.position.y) * 0.05;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

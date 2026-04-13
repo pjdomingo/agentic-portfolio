@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Vanguard | Auto Concept</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg: #111111;
+            --text-main: #f5f5f5;
+            --accent: #ff3333;
+        }
+
+        body {
+            margin: 0; padding: 0; background-color: var(--bg); color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden; 
+            /* Hide vertical scrollbar for the horizontal illusion wrapper */
+            scrollbar-width: none; 
+        }
+        body::-webkit-scrollbar { display: none; }
+
+        /* The proxy container that forces the page to have a massive height, allowing native vertical scrolling */
+        .scroll-proxy {
+            height: 400vw; /* 4 screens wide horizontally translates to 4 screens tall vertically */
+            width: 100%;
+            position: absolute; top: 0; left: 0; z-index: -1;
+        }
+
+        /* The actual sticky container that sweeps sideways */
+        .horizontal-wrapper {
+            position: fixed;
+            top: 0; left: 0;
+            width: 400vw;
+            height: 100vh;
+            display: flex;
+            will-change: transform;
+        }
+
+        section {
+            width: 100vw;
+            height: 100vh;
+            display: flex; flex-direction: column; justify-content: center;
+            padding: 4rem; box-sizing: border-box;
+            position: relative; overflow: hidden;
+            border-right: 1px solid rgba(255,255,255,0.1);
+        }
+
+        h1 {
+            font-size: clamp(5rem, 15vw, 20rem);
+            font-weight: 900; line-height: 0.8; letter-spacing: -0.06em;
+            margin: 0; text-transform: uppercase;
+            color: var(--text-main);
+        }
+        
+        .huge-hollow { color: transparent; -webkit-text-stroke: 2px rgba(255, 255, 255, 0.4); }
+
+        p { font-size: 1.5rem; max-width: 500px; color: #888; margin-top: 3rem; }
+
+        .back-link { position: fixed; top: 2rem; left: 2rem; color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,0.2); padding: 0.5rem 1.5rem; border-radius: 30px; transition: background 0.3s, color 0.3s; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.1em; z-index: 100; mix-blend-mode: difference; }
+        .back-link:hover { background: #fff; color: #000; }
+
+        /* Abstract structural grids doing the heavy lifting since we don't have vehicle photos */
+        .abstract-block { position: absolute; background: #222; border: 1px solid #333; }
+        .b1 { right: -5vw; top: 10vh; width: 40vw; height: 60vh; transform: skewX(-15deg); }
+        .b2 { left: 10vw; bottom: -10vh; width: 80vw; height: 40vh; transform: skewX(-15deg); background: #f5f5f5; z-index: -1; }
+        .b3 { right: 10vw; top: 20vh; width: 30vw; height: 80vh; transform: skewX(15deg); border-color: var(--accent); background: transparent; }
+
+        .metrics { display: flex; gap: 4rem; margin-top: auto; border-top: 1px solid #333; padding-top: 2rem; }
+        .metric-val { font-size: 4rem; font-weight: 900; letter-spacing: -0.05em; margin-bottom: 0.5rem; }
+        .metric-label { font-size: 0.8rem; text-transform: uppercase; color: #666; letter-spacing: 0.1em; }
+
+        .progress-bar { position: fixed; bottom: 0; left: 0; height: 4px; background: var(--text-main); width: 0%; z-index: 100; }
+    </style>
+</head>
+<body>
+
+    <a href="../portfolio.html" class="back-link">Back to Portfolio</a>
+    <div class="progress-bar" id="progress"></div>
+
+    <div class="scroll-proxy"></div>
+
+    <div class="horizontal-wrapper" id="horizontal">
+        
+        <!-- Frame 1 -->
+        <section>
+            <div class="abstract-block b1"></div>
+            <h1>Vanguard<br><span class="huge-hollow">Type R</span></h1>
+            <p>Aerodynamics strictly enforced by raw mathematics. A brutalist approach to hyper-velocity engineering.</p>
+        </section>
+
+        <!-- Frame 2 -->
+        <section>
+            <div class="abstract-block b2"></div>
+            <h1 style="color: #111;">Aerodynamic<br>Aggression.</h1>
+            <p style="color: #444;">Carbon-fiber monocoque chassis integrating directly with aerodynamic airflow splitters.</p>
+            <div class="metrics" style="border-top-color: #ddd;">
+                <div>
+                    <div class="metric-val" style="color: #111;">1.9s</div>
+                    <div class="metric-label" style="color: #888;">0-100 km/h</div>
+                </div>
+                <div>
+                    <div class="metric-val" style="color: #111;">12G</div>
+                    <div class="metric-label" style="color: #888;">Peak Downforce</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Frame 3 -->
+        <section>
+            <div class="abstract-block b3"></div>
+            <h1 class="huge-hollow">Kinetic<br><span style="color: var(--accent); -webkit-text-stroke: 0;">Recovery</span></h1>
+            <p>Dual axial flux motors recovering megawatt levels of energy on hard deceleration into hairpin turns.</p>
+        </section>
+
+        <!-- Frame 4 -->
+        <section style="align-items: center; text-align: center;">
+            <h1 style="font-size: 8rem; margin-bottom: 3rem;">Configure Yours.</h1>
+            <a href="#" style="padding: 1.5rem 4rem; background: #fff; color: #000; text-decoration: none; font-weight: 900; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.1em;">Reserve</a>
+        </section>
+
+    </div>
+
+    <script>
+        const horizontalWrapper = document.getElementById('horizontal');
+        const progressBar = document.getElementById('progress');
+
+        // Smoothly interpolate native vertical scroll into horizontal translation
+        let currentScroll = 0;
+        let targetScroll = 0;
+        let maxScroll = 0;
+
+        function updateDimensions() {
+            // maxScroll is the difference between total document height and viewport height
+            maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+        }
+        
+        window.addEventListener('resize', updateDimensions);
+        updateDimensions();
+
+        window.addEventListener('scroll', () => {
+            targetScroll = window.scrollY;
+        });
+
+        function render() {
+            // Lerp
+            currentScroll += (targetScroll - currentScroll) * 0.1;
+
+            // Map vertical scroll to horizontal translation percentage
+            // Math: Translate X by the exact percentage that we've scrolled vertically down the proxy
+            const scrollPercentage = currentScroll / maxScroll;
+            const xTranslation = scrollPercentage * (window.innerWidth - horizontalWrapper.offsetWidth);
+            
+            horizontalWrapper.style.transform = `translate3d(${xTranslation}px, 0, 0)`;
+            progressBar.style.width = `${scrollPercentage * 100}%`;
+
+            requestAnimationFrame(render);
+        }
+        render();
+    </script>
+</body>
+</html>
