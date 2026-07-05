@@ -1,101 +1,93 @@
 # CertifyHub — AI Course Generator (working demo)
 
-A **real, working** proof-of-concept of the platform's differentiator: upload a
-document and watch Claude generate a complete interactive ISO/SOC compliance
-course — lessons, quizzes, flashcards, scenarios, and exams — with every block
-grounded in a citation back to the source, ready for expert review.
+Upload a document and watch it become a **complete, interactive, mobile-friendly
+course** — an outline, then step-by-step lessons with quizzes, flashcards, and
+decision scenarios, each grounded in a citation back to the source. It's the
+"show, don't tell" companion to the planning package in the parent folder, and it
+implements the AI course-generation pipeline from [`../02-mvp-spec.md` §3.3](../02-mvp-spec.md).
 
-This is the "show, don't tell" companion to the planning package in the parent
-folder. It implements the AI course-generation pipeline described in
-[`../02-mvp-spec.md` §3.3](../02-mvp-spec.md).
+**It runs entirely in the browser** — no server, no database — so it deploys as a
+plain static site (e.g. Cloudflare Pages) and is safe to make public.
 
 ## What it does
 
-A four-step studio wizard:
+1. **Source** — drop a PDF / Markdown / TXT file, or tap **Use sample document**
+   (a bundled ISO 27001 primer). Set the audience and goal.
+2. **Outline** — an outline is drafted (modules → lessons → objectives). Edit
+   titles or remove lessons before generating.
+3. **Generate** — lessons are produced one at a time with a **live cost tally**.
+4. **Take the course** — a modern **step-by-step player** (one interaction per
+   screen, microlearning style). Quizzes and scenarios must be answered to
+   advance; there's a progress bar, points, and a lesson-complete screen.
+   Regenerate any lesson with a plain-language note. Fully responsive — designed
+   mobile-first.
 
-1. **Source** — drop a PDF / Markdown / TXT file, or click **Use sample
-   document** (a bundled ISO 27001 primer). Set the target audience and goal.
-2. **Outline** — Claude drafts a course outline (modules → lessons →
-   objectives). Edit lesson titles or remove lessons before generating.
-3. **Generate** — each lesson is generated individually and streamed to the
-   browser, so you watch lessons appear one by one with a **live token/cost
-   tally** (real API spend).
-4. **Review & publish** — the generated course renders like a real course
-   player. The quizzes, flashcards, and scenarios **actually work**. Hover any
-   **“source”** tag to see the passage a block was grounded in (the
-   anti-hallucination story). Regenerate any lesson with an instruction
-   (e.g. *“simpler language”*), then publish.
+## Two modes (switch with the badge in the top-right)
 
-## Two ways to run
+- **Mock mode (default)** — canned course content, no key, no cost, works
+  offline. This is what public visitors get, so nobody can run up API charges.
+- **Live mode** — tap the badge and paste **your own** Anthropic API key to
+  generate real courses from your uploads. The key is stored only in your
+  browser (localStorage) and sent only to Anthropic — never to any server.
+  Get one at <https://console.anthropic.com/> → API Keys.
 
-The app auto-detects its mode:
+> Why "bring your own key" instead of a server? A public demo that called Claude
+> from a shared server key would let any visitor spend your credits. Client-side
+> BYO-key keeps the public demo free and safe while still allowing real
+> generation for anyone who supplies their own key.
 
-- **Mock mode** (default, no setup) — if there's no API key, the entire flow
-  runs on canned course content with simulated streaming. **Perfect for pitching
-  offline** — nothing to configure, no spend, no network.
-- **Live mode** — set an Anthropic API key and it really calls Claude to
-  generate a course from whatever document you upload.
-
-## Run it
+## Run locally
 
 ```bash
-cd iso-lms-platform/demo
+cd demo
 npm install
-npm run dev            # http://localhost:3000  (mock mode)
+npm run dev        # http://localhost:3000
 ```
 
-To run against the real Claude API:
+`npm run build` produces a fully static site in `out/` (see deploy below).
 
-```bash
-cp .env.example .env.local
-# edit .env.local and set ANTHROPIC_API_KEY=sk-ant-...
-npm run dev            # now generates live from your uploads
-```
+## Deploy to Cloudflare Pages
 
-Get an API key at <https://console.anthropic.com/> → API Keys. A live demo
-course from the sample document costs roughly **$0.10–$0.50** in API usage —
-the cost tally on the Generate screen shows the real number.
+Because it's a static export, deployment is trivial and **won't touch your
+existing site** — create a *separate* Pages project pointing at this subfolder:
 
-> Designed to be run locally (`npm run dev` / `npm run start`). Live generation
-> makes several sequential model calls, so if you deploy it, use a host that
-> allows long-running serverless functions (or keep it on mock mode for a hosted
-> pitch link).
+1. Push this repo to GitHub (the demo lives in its own folder).
+2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
+   **Connect to Git** → pick the repo.
+3. Build settings:
+   - **Root directory:** the folder that contains this README (e.g. `demo/`)
+   - **Framework preset:** Next.js (Static HTML Export) — or set manually:
+   - **Build command:** `npm run build`
+   - **Build output directory:** `out`
+4. Deploy. You get a `*.pages.dev` URL. Add a custom subdomain (e.g.
+   `demo.paolodomingo.com`) under the project's **Custom domains** tab, then
+   link it from your site with a "Try the live demo" button.
 
-## Configuration (`.env.local`)
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | — | Set it to enable live generation. Unset = mock mode. |
-| `GENERATION_MODEL` | `claude-sonnet-5` | The model used for generation (per the plan's tech-stack doc). `claude-haiku-4-5` is cheaper/faster. |
-| `DEMO_MODE` | — | Set to `mock` to force mock mode even with a key. |
+No environment variables are needed — the deployed site runs in mock mode, and
+live generation is opt-in per visitor via their own key.
 
 ## How it's built
 
-- **Next.js (App Router) + TypeScript**, one app, no database — course state
-  lives in the browser (with `localStorage` so a refresh doesn't lose your work).
-- **Anthropic TypeScript SDK** with **structured outputs** (JSON-schema-
-  constrained responses) so generated courses are always valid, parseable JSON.
-- **PDF extraction** via `unpdf`.
-- Server routes: `outline` (one structured call), `generate` (per-lesson
-  pipeline streamed over SSE), `regenerate` (single lesson with an instruction),
-  `extract` (file → text), `status` (mode).
-- Generation prompts require every block to cite the source passage it was
-  grounded in — the human-review gate the real product depends on.
+- **Next.js (App Router) + TypeScript**, `output: "export"` → 100% static.
+- All generation runs client-side in `lib/engine.ts`: mock content, or real
+  generation via the **Anthropic TypeScript SDK** in the browser
+  (`dangerouslyAllowBrowser`, the visitor's own key) using **structured
+  outputs** so generated courses are always valid JSON.
+- **PDF extraction** via `unpdf` (runs in the browser).
+- Course state persists in `localStorage`, so a refresh doesn't lose progress.
 
 ```
 app/
-  page.tsx              the 4-step wizard + course player
-  api/{extract,outline,generate,regenerate,status}/route.ts
+  page.tsx        wizard + course overview + step-by-step player
+  globals.css     mobile-first design system
 lib/
-  schemas.ts            shared types + JSON schemas + block normalization
-  anthropic.ts          client, model/pricing config, structured-JSON helper
-  prompts.ts            outline/lesson/regen prompts (cite-the-source rules)
-  extract.ts            PDF/MD/TXT extraction
-  mock.ts               canned course for offline mode
-sample/
-  iso27001-primer.md    the bundled sample source document
+  engine.ts       client generation (mock + BYO-key real), file extraction
+  schemas.ts      shared types, JSON schemas, block normalization
+  prompts.ts      outline/lesson/regen prompts (cite-the-source rules)
+  mock.ts         canned course for mock mode
+  sampleText.ts   bundled ISO 27001 sample document
 ```
 
 Not included (it's a focused demo of the generator, not the whole product):
-auth, database, payments, the learner/admin apps, AI video. Those are scoped in
+auth, database, payments, the learner/admin apps, AI video — those are scoped in
 the parent planning package.

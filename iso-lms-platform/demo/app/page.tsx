@@ -1,19 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  extractFile,
+  generateCourse,
+  generateOutline,
+  getApiKey,
+  regenerateLesson,
+  sampleSource,
+  setApiKey,
+  type LessonProgressEvent,
+} from "@/lib/engine";
 import type {
   Block,
   CourseSettings,
   Flashcard,
   GeneratedLesson,
   Outline,
+  OutlineLesson,
   ScenarioChoice,
 } from "@/lib/schemas";
 
 type Step = "source" | "outline" | "generate" | "review";
-type LessonStatus = "queued" | "active" | "done" | "error";
+type GStatus = "queued" | "active" | "done" | "error";
+type LessonProg = { done: boolean };
 
-const STORAGE_KEY = "certifyhub-demo-v1";
+const STORAGE_KEY = "certifyhub-demo-v2";
+const POINTS_PER_LESSON = 10;
 const fmtUsd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
 const fmtInt = (n: number) => n.toLocaleString("en-US");
 
@@ -24,11 +37,10 @@ interface Totals {
 }
 
 export default function Page() {
-  const [mock, setMock] = useState<boolean | null>(null);
-  const [model, setModel] = useState<string | null>(null);
-
+  const [hasKey, setHasKey] = useState(false);
   const [step, setStep] = useState<Step>("source");
-  const [sourceText, setSourceText] = useState("");
+
+  const [source, setSource] = useState("");
   const [filename, setFilename] = useState("");
   const [pages, setPages] = useState<number | undefined>();
   const [truncated, setTruncated] = useState(false);
@@ -39,44 +51,35 @@ export default function Page() {
 
   const [outline, setOutline] = useState<Outline | null>(null);
   const [lessons, setLessons] = useState<Record<string, GeneratedLesson>>({});
-  const [status, setStatus] = useState<Record<string, LessonStatus>>({});
-  const [totals, setTotals] = useState<Totals>({
-    inputTokens: 0,
-    outputTokens: 0,
-    costUsd: 0,
-  });
-  const [activeLesson, setActiveLesson] = useState<string>("");
+  const [gstatus, setGstatus] = useState<Record<string, GStatus>>({});
+  const [totals, setTotals] = useState<Totals>({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+  const [progress, setProgress] = useState<Record<string, LessonProg>>({});
 
+  const [player, setPlayer] = useState<string | null>(null); // open lesson id
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [published, setPublished] = useState(false);
   const [toast, setToast] = useState("");
+  const [keyModal, setKeyModal] = useState(false);
 
-  // --- status + restore ---
+  // restore
   useEffect(() => {
-    fetch("/api/status")
-      .then((r) => r.json())
-      .then((d) => {
-        setMock(!!d.mock);
-        setModel(d.model);
-      })
-      .catch(() => setMock(true));
-
+    setHasKey(!!getApiKey());
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const s = JSON.parse(raw);
         setStep(s.step ?? "source");
-        setSourceText(s.sourceText ?? "");
+        setSource(s.source ?? "");
         setFilename(s.filename ?? "");
         setPages(s.pages);
         setTruncated(!!s.truncated);
         setSettings(s.settings ?? settings);
         setOutline(s.outline ?? null);
         setLessons(s.lessons ?? {});
-        setStatus(s.status ?? {});
+        setGstatus(s.gstatus ?? {});
         setTotals(s.totals ?? { inputTokens: 0, outputTokens: 0, costUsd: 0 });
-        setActiveLesson(s.activeLesson ?? "");
+        setProgress(s.progress ?? {});
       }
     } catch {
       /* ignore */
@@ -84,61 +87,34 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- persist ---
+  // persist
   useEffect(() => {
-    if (mock === null) return;
-    const snapshot = {
-      step,
-      sourceText,
-      filename,
-      pages,
-      truncated,
-      settings,
-      outline,
-      lessons,
-      status,
-      totals,
-      activeLesson,
-    };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ step, source, filename, pages, truncated, settings, outline, lessons, gstatus, totals, progress }),
+      );
     } catch {
-      /* quota — ignore */
+      /* ignore */
     }
-  }, [
-    mock,
-    step,
-    sourceText,
-    filename,
-    pages,
-    truncated,
-    settings,
-    outline,
-    lessons,
-    status,
-    totals,
-    activeLesson,
-  ]);
+  }, [step, source, filename, pages, truncated, settings, outline, lessons, gstatus, totals, progress]);
 
   const flash = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(""), 2600);
   };
 
-  // ---------- Step 1: source ----------
-  const handleFile = useCallback(async (file: File) => {
+  // ---- source ----
+  const onFile = useCallback(async (file: File) => {
     setError("");
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch("/api/extract", { method: "POST", body: form });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "Could not read that file.");
-      setSourceText(d.text);
-      setFilename(d.filename);
-      setPages(d.pages);
-      setTruncated(!!d.truncated);
+      const r = await extractFile(file);
+      if (!r.text.trim()) throw new Error("Couldn't extract text (a scanned-image PDF needs OCR).");
+      setSource(r.text);
+      setFilename(r.filename);
+      setPages(r.pages);
+      setTruncated(r.truncated);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -146,40 +122,25 @@ export default function Page() {
     }
   }, []);
 
-  const useSample = useCallback(async () => {
+  const onSample = useCallback(() => {
+    const r = sampleSource();
+    setSource(r.text);
+    setFilename(r.filename);
+    setPages(undefined);
+    setTruncated(false);
     setError("");
-    setBusy(true);
-    try {
-      const res = await fetch("/api/extract?sample=1", { method: "POST" });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "Sample unavailable.");
-      setSourceText(d.text);
-      setFilename(d.filename);
-      setPages(undefined);
-      setTruncated(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
   }, []);
 
-  // ---------- Step 2: outline ----------
-  const genOutline = async () => {
+  // ---- outline ----
+  const doOutline = async () => {
     setError("");
     setBusy(true);
     try {
-      const res = await fetch("/api/outline", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: sourceText, settings }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "Outline generation failed.");
-      setOutline(d.outline);
+      const { outline: o } = await generateOutline(source, settings);
+      setOutline(o);
       setStep("outline");
     } catch (e) {
-      setError((e as Error).message);
+      setError(errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -198,173 +159,141 @@ export default function Page() {
     if (next.modules[mi].lessons.length === 0) next.modules.splice(mi, 1);
     setOutline(next);
   };
+  const totalLessons = outline ? outline.modules.reduce((n, m) => n + m.lessons.length, 0) : 0;
 
-  const totalLessons = outline
-    ? outline.modules.reduce((n, m) => n + m.lessons.length, 0)
-    : 0;
-
-  // ---------- Step 3: generate (SSE) ----------
-  const approveAndGenerate = async () => {
+  // ---- generate ----
+  const doGenerate = async () => {
     if (!outline) return;
     setError("");
     setLessons({});
-    setStatus(
-      Object.fromEntries(
-        outline.modules.flatMap((m) =>
-          m.lessons.map((l) => [l.id, "queued" as LessonStatus]),
-        ),
-      ),
-    );
+    setProgress({});
+    setPublished(false);
+    setGstatus(Object.fromEntries(outline.modules.flatMap((m) => m.lessons.map((l) => [l.id, "queued" as GStatus]))));
     setTotals({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
     setStep("generate");
     setBusy(true);
-
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: sourceText, outline, settings }),
-      });
-      if (!res.body) throw new Error("No response stream.");
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let firstDone = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() || "";
-        for (const part of parts) {
-          const line = part.split("\n").find((l) => l.startsWith("data: "));
-          if (!line) continue;
-          const ev = JSON.parse(line.slice(6));
-          if (ev.type === "lesson_start") {
-            setStatus((s) => ({ ...s, [ev.lessonId]: "active" }));
-          } else if (ev.type === "lesson_done") {
-            if (!firstDone) firstDone = ev.lessonId;
-            setLessons((ls) => ({ ...ls, [ev.lessonId]: ev.lesson }));
-            setStatus((s) => ({ ...s, [ev.lessonId]: "done" }));
-            setTotals(ev.totals);
-          } else if (ev.type === "lesson_error") {
-            setStatus((s) => ({ ...s, [ev.lessonId]: "error" }));
-          } else if (ev.type === "complete") {
-            setTotals(ev.totals);
-          }
+      await generateCourse(source, outline, settings, (e: LessonProgressEvent) => {
+        if (e.phase === "start") {
+          setGstatus((s) => ({ ...s, [e.lessonId]: "active" }));
+        } else if (e.phase === "done" && e.lesson) {
+          setLessons((ls) => ({ ...ls, [e.lessonId]: e.lesson! }));
+          setGstatus((s) => ({ ...s, [e.lessonId]: "done" }));
+          if (e.usage)
+            setTotals((t) => ({
+              inputTokens: t.inputTokens + e.usage!.inputTokens,
+              outputTokens: t.outputTokens + e.usage!.outputTokens,
+              costUsd: t.costUsd + e.usage!.costUsd,
+            }));
+        } else if (e.phase === "error") {
+          setGstatus((s) => ({ ...s, [e.lessonId]: "error" }));
         }
-      }
-      setActiveLesson((cur) => cur || firstDone);
-      setTimeout(() => setStep("review"), 600);
+      });
+      setTimeout(() => setStep("review"), 650);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errMsg(e));
     } finally {
       setBusy(false);
     }
   };
 
-  // ---------- Step 4: regenerate ----------
-  const [regenText, setRegenText] = useState("");
-  const [regenBusy, setRegenBusy] = useState(false);
-  const regenerate = async (lessonId: string) => {
-    if (!outline || !regenText.trim()) return;
+  // ---- player / progress ----
+  const completeLesson = (lessonId: string) => {
+    setProgress((p) => (p[lessonId]?.done ? p : { ...p, [lessonId]: { done: true } }));
+  };
+  const lessonsDone = Object.values(progress).filter((p) => p.done).length;
+  const generatedCount = Object.keys(lessons).length;
+  const points = lessonsDone * POINTS_PER_LESSON;
+
+  const orderedLessonIds = outline ? outline.modules.flatMap((m) => m.lessons.map((l) => l.id)).filter((id) => lessons[id]) : [];
+  const nextLessonId = (id: string): string | null => {
+    const i = orderedLessonIds.indexOf(id);
+    return i >= 0 && i < orderedLessonIds.length - 1 ? orderedLessonIds[i + 1] : null;
+  };
+
+  // ---- regenerate ----
+  const doRegenerate = async (lessonId: string, instruction: string) => {
+    if (!outline || !instruction.trim()) return;
     let moduleTitle = "";
-    let ol = null;
+    let ol: OutlineLesson | null = null;
     for (const m of outline.modules) {
-      const found = m.lessons.find((l) => l.id === lessonId);
-      if (found) {
+      const f = m.lessons.find((l) => l.id === lessonId);
+      if (f) {
         moduleTitle = m.title;
-        ol = found;
+        ol = f;
       }
     }
     if (!ol) return;
-    setRegenBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/regenerate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source: sourceText,
-          courseTitle: outline.courseTitle,
-          moduleTitle,
-          lesson: ol,
-          settings,
-          instruction: regenText.trim(),
-        }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "Regeneration failed.");
-      setLessons((ls) => ({ ...ls, [lessonId]: d.lesson }));
-      setTotals((t) => ({
-        inputTokens: t.inputTokens + (d.usage?.inputTokens || 0),
-        outputTokens: t.outputTokens + (d.usage?.outputTokens || 0),
-        costUsd: t.costUsd + (d.usage?.costUsd || 0),
-      }));
-      setRegenText("");
-      flash("Lesson regenerated");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setRegenBusy(false);
-    }
+    const r = await regenerateLesson(source, outline.courseTitle, moduleTitle, ol, settings, instruction.trim());
+    setLessons((ls) => ({ ...ls, [lessonId]: r.lesson }));
+    setTotals((t) => ({
+      inputTokens: t.inputTokens + r.usage.inputTokens,
+      outputTokens: t.outputTokens + r.usage.outputTokens,
+      costUsd: t.costUsd + r.usage.costUsd,
+    }));
+    flash("Lesson regenerated");
   };
 
   const resetAll = () => {
     localStorage.removeItem(STORAGE_KEY);
     setStep("source");
-    setSourceText("");
+    setSource("");
     setFilename("");
     setPages(undefined);
     setTruncated(false);
     setOutline(null);
     setLessons({});
-    setStatus({});
+    setGstatus({});
     setTotals({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
-    setActiveLesson("");
+    setProgress({});
     setPublished(false);
+    setPlayer(null);
     setError("");
   };
 
-  const generatedCount = Object.keys(lessons).length;
+  const saveKey = (k: string) => {
+    setApiKey(k.trim());
+    setHasKey(!!k.trim());
+    setKeyModal(false);
+    flash(k.trim() ? "Live mode on — real generation enabled" : "Switched to mock mode");
+  };
 
   return (
     <div className="app">
       <div className="topbar">
         <div className="brand">
-          Certify<b>Hub</b> <span className="dim small">· Course Studio</span>
+          Certify<b>Hub</b> <span className="tagline">· Course Studio</span>
         </div>
-        {mock !== null &&
-          (mock ? (
-            <span className="badge-mode mock" title="No API key configured — running on canned content">
-              ● Mock mode
-            </span>
-          ) : (
-            <span className="badge-mode live" title={`Live — ${model}`}>
-              ● Live · {model}
-            </span>
-          ))}
+        <button
+          className={`badge-mode ${hasKey ? "live" : "mock"}`}
+          onClick={() => setKeyModal(true)}
+          title={hasKey ? "Live — using your Anthropic key. Tap to manage." : "Mock mode — tap to add your key for real generation"}
+        >
+          ● {hasKey ? "Live" : "Mock"}
+        </button>
       </div>
 
       <div className="wrap">
         <Stepper step={step} />
-
         {error && <div className="err-banner">{error}</div>}
 
         {step === "source" && (
           <SourceStep
             busy={busy}
+            hasKey={hasKey}
             filename={filename}
             pages={pages}
             truncated={truncated}
-            sourceLen={sourceText.length}
+            sourceLen={source.length}
             settings={settings}
             setSettings={setSettings}
-            onFile={handleFile}
-            onSample={useSample}
-            onNext={genOutline}
-            mock={mock}
+            onFile={onFile}
+            onSample={onSample}
+            onChange={() => {
+              setFilename("");
+              setSource("");
+            }}
+            onNext={doOutline}
           />
         )}
 
@@ -375,74 +304,84 @@ export default function Page() {
             onRename={renameLesson}
             onDelete={deleteLesson}
             onBack={() => setStep("source")}
-            onApprove={approveAndGenerate}
+            onApprove={doGenerate}
             busy={busy}
           />
         )}
 
-        {step === "generate" && outline && (
-          <GenerateStep outline={outline} status={status} totals={totals} />
-        )}
+        {step === "generate" && outline && <GenerateStep outline={outline} gstatus={gstatus} totals={totals} />}
 
         {step === "review" && outline && !published && (
-          <ReviewStep
+          <CourseOverview
             outline={outline}
             lessons={lessons}
-            active={activeLesson || Object.keys(lessons)[0] || ""}
-            setActive={setActiveLesson}
+            progress={progress}
             totals={totals}
             generatedCount={generatedCount}
-            regenText={regenText}
-            setRegenText={setRegenText}
-            regenBusy={regenBusy}
-            onRegenerate={regenerate}
+            lessonsDone={lessonsDone}
+            points={points}
+            onOpen={(id) => setPlayer(id)}
             onPublish={() => setPublished(true)}
           />
         )}
 
         {published && outline && (
-          <Published
-            outline={outline}
-            totals={totals}
-            count={generatedCount}
-            onReset={resetAll}
-          />
+          <Published outline={outline} totals={totals} count={generatedCount} points={points} onReset={resetAll} />
         )}
       </div>
 
+      {player && lessons[player] && outline && (
+        <LessonPlayer
+          lesson={lessons[player]}
+          moduleTitle={moduleTitleFor(outline, player)}
+          hasNext={!!nextLessonId(player)}
+          onClose={() => setPlayer(null)}
+          onComplete={() => completeLesson(player)}
+          onNext={() => {
+            const n = nextLessonId(player);
+            setPlayer(n);
+          }}
+          onRegenerate={(instr) => doRegenerate(player, instr)}
+        />
+      )}
+
+      {keyModal && <KeyModal hasKey={hasKey} onSave={saveKey} onClose={() => setKeyModal(false)} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
 
+function errMsg(e: unknown): string {
+  const m = (e as Error).message || "Something went wrong.";
+  if (/api key|authentication|401/i.test(m)) return "That Anthropic API key was rejected. Check it in the Live/Mock badge, or switch back to mock mode.";
+  return m;
+}
+function moduleTitleFor(outline: Outline, lessonId: string): string {
+  for (const m of outline.modules) if (m.lessons.some((l) => l.id === lessonId)) return m.title;
+  return "";
+}
+
 /* ---------------- Stepper ---------------- */
 function Stepper({ step }: { step: Step }) {
   const order: Step[] = ["source", "outline", "generate", "review"];
-  const labels: Record<Step, string> = {
-    source: "Source",
-    outline: "Outline",
-    generate: "Generate",
-    review: "Review & publish",
-  };
+  const labels: Record<Step, string> = { source: "Source", outline: "Outline", generate: "Generate", review: "Review" };
   const idx = order.indexOf(step);
   return (
     <div className="steps">
       {order.map((s, i) => (
-        <div
-          key={s}
-          className={`step-pill ${i === idx ? "active" : ""} ${i < idx ? "done" : ""}`}
-        >
+        <div key={s} className={`step-pill ${i === idx ? "active" : ""} ${i < idx ? "done" : ""}`}>
           <span className="num">{i < idx ? "✓" : i + 1}</span>
-          {labels[s]}
+          <span className="lbl">{labels[s]}</span>
         </div>
       ))}
     </div>
   );
 }
 
-/* ---------------- Step 1 ---------------- */
+/* ---------------- Step 1: source ---------------- */
 function SourceStep(props: {
   busy: boolean;
+  hasKey: boolean;
   filename: string;
   pages?: number;
   truncated: boolean;
@@ -451,33 +390,19 @@ function SourceStep(props: {
   setSettings: (s: CourseSettings) => void;
   onFile: (f: File) => void;
   onSample: () => void;
+  onChange: () => void;
   onNext: () => void;
-  mock: boolean | null;
 }) {
   const [over, setOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const {
-    busy,
-    filename,
-    pages,
-    truncated,
-    sourceLen,
-    settings,
-    setSettings,
-    onFile,
-    onSample,
-    onNext,
-    mock,
-  } = props;
+  const { busy, hasKey, filename, pages, truncated, sourceLen, settings, setSettings, onFile, onSample, onChange, onNext } = props;
 
   return (
     <>
       <h1 className="title">Turn a document into a course</h1>
       <p className="sub">
-        Upload a standard summary, an internal policy, or training notes.
-        {mock
-          ? " This build has no API key, so it runs on a canned ISO 27001 course — the full flow, offline."
-          : " Claude reads it and drafts a complete interactive course, ready for expert review."}
+        Upload a standard summary, an internal policy, or training notes.{" "}
+        {hasKey ? "Claude reads it and drafts a complete interactive course." : "Try it on a bundled ISO 27001 primer — no setup needed."}
       </p>
 
       <div className="card">
@@ -501,7 +426,7 @@ function SourceStep(props: {
             >
               <div className="icon">📄</div>
               <div className="big">Drop a PDF, Markdown, or text file</div>
-              <div className="mut small">or click to browse · max ~50k characters</div>
+              <div className="mut small">or tap to browse · up to ~50k characters</div>
               <input
                 ref={inputRef}
                 type="file"
@@ -514,9 +439,8 @@ function SourceStep(props: {
               />
             </div>
             <div className="orline">or</div>
-            <button className="btn" onClick={onSample} disabled={busy}>
-              {busy ? <span className="spin-inline" /> : "📘"} Use sample document
-              (ISO 27001 primer)
+            <button className="btn block" onClick={onSample} disabled={busy}>
+              📘 Use sample document (ISO 27001 primer)
             </button>
           </>
         ) : (
@@ -525,16 +449,12 @@ function SourceStep(props: {
             <div className="meta">
               <b>{filename}</b>
               <span>
-                {fmtInt(sourceLen)} characters
-                {pages ? ` · ${pages} pages` : ""}
-                {truncated ? " · trimmed to fit" : ""}
+                {fmtInt(sourceLen)} chars{pages ? ` · ${pages} pages` : ""}
+                {truncated ? " · trimmed" : ""}
               </span>
             </div>
             <div className="spacer" />
-            <button
-              className="btn ghost sm"
-              onClick={() => window.location.reload()}
-            >
+            <button className="btn ghost sm" onClick={onChange}>
               Change
             </button>
           </div>
@@ -543,35 +463,26 @@ function SourceStep(props: {
         {filename && (
           <>
             <label className="fld">Target audience</label>
-            <input
-              className="txt"
-              value={settings.audience}
-              onChange={(e) =>
-                setSettings({ ...settings, audience: e.target.value })
-              }
-            />
+            <input className="txt" value={settings.audience} onChange={(e) => setSettings({ ...settings, audience: e.target.value })} />
             <label className="fld">Course goal</label>
-            <input
-              className="txt"
-              value={settings.goal}
-              onChange={(e) =>
-                setSettings({ ...settings, goal: e.target.value })
-              }
-            />
-            <div className="row" style={{ marginTop: 22 }}>
-              <div className="spacer" />
-              <button className="btn primary" onClick={onNext} disabled={busy}>
-                {busy ? <span className="spin-inline" /> : null} Generate outline →
-              </button>
-            </div>
+            <input className="txt" value={settings.goal} onChange={(e) => setSettings({ ...settings, goal: e.target.value })} />
           </>
         )}
       </div>
+
+      {filename && (
+        <div className="actionbar">
+          <div className="spacer" />
+          <button className="btn primary" onClick={onNext} disabled={busy}>
+            {busy ? <span className="spin-inline" /> : null} Generate outline →
+          </button>
+        </div>
+      )}
     </>
   );
 }
 
-/* ---------------- Step 2 ---------------- */
+/* ---------------- Step 2: outline ---------------- */
 function OutlineStep(props: {
   outline: Outline;
   totalLessons: number;
@@ -581,18 +492,13 @@ function OutlineStep(props: {
   onApprove: () => void;
   busy: boolean;
 }) {
-  const { outline, totalLessons, onRename, onDelete, onBack, onApprove, busy } =
-    props;
-  const [editing, setEditing] = useState<string>("");
+  const { outline, totalLessons, onRename, onDelete, onBack, onApprove, busy } = props;
+  const [editing, setEditing] = useState("");
 
   return (
     <>
       <h1 className="title">{outline.courseTitle}</h1>
       <p className="sub">{outline.summary}</p>
-      <p className="note-inline" style={{ marginTop: -14, marginBottom: 20 }}>
-        Review the structure and edit lesson titles before generating. In the
-        real product this is where the subject-matter expert shapes the course.
-      </p>
 
       {outline.modules.map((m, mi) => (
         <div className="mod" key={m.id}>
@@ -621,21 +527,12 @@ function OutlineStep(props: {
                     }}
                   />
                 ) : (
-                  <div
-                    className="ltitle"
-                    onClick={() => setEditing(key)}
-                    title="Click to edit"
-                    style={{ cursor: "text" }}
-                  >
+                  <div className="ltitle" onClick={() => setEditing(key)} style={{ cursor: "text" }}>
                     <b>{l.title}</b>
                     <span>{l.objective}</span>
                   </div>
                 )}
-                <button
-                  className="iconbtn"
-                  onClick={() => onDelete(mi, li)}
-                  title="Remove lesson"
-                >
+                <button className="iconbtn" onClick={() => onDelete(mi, li)} aria-label="Remove lesson">
                   ✕
                 </button>
               </div>
@@ -644,77 +541,52 @@ function OutlineStep(props: {
         </div>
       ))}
 
-      <div className="row" style={{ marginTop: 22 }}>
+      <p className="note-inline">Tap a lesson title to edit it. In the real product this is where a subject-matter expert shapes the course before generation.</p>
+
+      <div className="actionbar">
         <button className="btn ghost" onClick={onBack}>
           ← Back
         </button>
         <div className="spacer" />
-        <button
-          className="btn primary"
-          onClick={onApprove}
-          disabled={busy || totalLessons === 0}
-        >
-          Approve &amp; generate {totalLessons} lesson
-          {totalLessons === 1 ? "" : "s"} →
+        <button className="btn primary" onClick={onApprove} disabled={busy || totalLessons === 0}>
+          Generate {totalLessons} lesson{totalLessons === 1 ? "" : "s"} →
         </button>
       </div>
     </>
   );
 }
 
-/* ---------------- Step 3 ---------------- */
-function GenerateStep(props: {
-  outline: Outline;
-  status: Record<string, LessonStatus>;
-  totals: Totals;
-}) {
-  const { outline, status, totals } = props;
-  const flat = outline.modules.flatMap((m) =>
-    m.lessons.map((l) => ({ ...l, moduleTitle: m.title })),
-  );
-  const doneCount = Object.values(status).filter((s) => s === "done").length;
-
+/* ---------------- Step 3: generate ---------------- */
+function GenerateStep(props: { outline: Outline; gstatus: Record<string, GStatus>; totals: Totals }) {
+  const { outline, gstatus, totals } = props;
+  const flat = outline.modules.flatMap((m) => m.lessons.map((l) => ({ ...l, moduleTitle: m.title })));
+  const doneCount = Object.values(gstatus).filter((s) => s === "done").length;
   return (
     <>
       <h1 className="title">Generating the course</h1>
-      <p className="sub">
-        Each lesson is generated individually and grounded in the source — so
-        it&apos;s reviewable, cheap to regenerate, and every claim traces back to
-        your document.
-      </p>
-
+      <p className="sub">Each lesson is generated individually and grounded in your source — reviewable, cheap to regenerate, and traceable.</p>
       <div className="gen-grid">
         <div className="prog-list">
           {flat.map((l, i) => {
-            const st = status[l.id] || "queued";
+            const st = gstatus[l.id] || "queued";
             return (
               <div className={`prog-item ${st}`} key={l.id}>
-                <span className={`st ${st}`}>
-                  {st === "done" ? "✓" : st === "error" ? "!" : st === "queued" ? i + 1 : ""}
-                </span>
+                <span className={`st ${st}`}>{st === "done" ? "✓" : st === "error" ? "!" : st === "queued" ? i + 1 : ""}</span>
                 <div className="pt">
                   <b>{l.title}</b>
                   <span>
-                    {l.moduleTitle} ·{" "}
-                    {st === "active"
-                      ? "generating…"
-                      : st === "done"
-                        ? "ready"
-                        : st === "error"
-                          ? "failed"
-                          : "queued"}
+                    {l.moduleTitle} · {st === "active" ? "generating…" : st === "done" ? "ready" : st === "error" ? "failed" : "queued"}
                   </span>
                 </div>
               </div>
             );
           })}
         </div>
-
         <div className="meter">
           <h4>Live generation cost</h4>
           <div className="cost">{fmtUsd(totals.costUsd)}</div>
           <div className="costsub">
-            {doneCount} / {flat.length} lessons · real API spend
+            {doneCount} / {flat.length} lessons
           </div>
           <div className="kv">
             <span>Input tokens</span>
@@ -728,159 +600,339 @@ function GenerateStep(props: {
             <span>Per lesson</span>
             <b>{fmtUsd(doneCount ? totals.costUsd / doneCount : 0)}</b>
           </div>
-          <p className="note-inline">
-            Traditional instructional design runs $3,000–$10,000 per course.
-          </p>
+          <p className="note-inline">Traditional instructional design runs $3,000–$10,000 per course.</p>
         </div>
       </div>
     </>
   );
 }
 
-/* ---------------- Step 4: review ---------------- */
-function ReviewStep(props: {
+/* ---------------- Step 4: course overview ---------------- */
+function CourseOverview(props: {
   outline: Outline;
   lessons: Record<string, GeneratedLesson>;
-  active: string;
-  setActive: (id: string) => void;
+  progress: Record<string, LessonProg>;
   totals: Totals;
   generatedCount: number;
-  regenText: string;
-  setRegenText: (s: string) => void;
-  regenBusy: boolean;
-  onRegenerate: (id: string) => void;
+  lessonsDone: number;
+  points: number;
+  onOpen: (id: string) => void;
   onPublish: () => void;
 }) {
-  const {
-    outline,
-    lessons,
-    active,
-    setActive,
-    totals,
-    generatedCount,
-    regenText,
-    setRegenText,
-    regenBusy,
-    onRegenerate,
-    onPublish,
-  } = props;
-
-  const lesson = lessons[active];
+  const { outline, lessons, progress, totals, generatedCount, lessonsDone, points, onOpen, onPublish } = props;
+  const pct = generatedCount ? Math.round((lessonsDone / generatedCount) * 100) : 0;
 
   return (
     <>
-      <div className="row" style={{ alignItems: "baseline" }}>
+      <div className="ov-head">
         <div>
           <h1 className="title">{outline.courseTitle}</h1>
-          <p className="sub" style={{ marginBottom: 14 }}>
-            {generatedCount} lessons generated for {fmtUsd(totals.costUsd)}. Try
-            the interactions — they really work. Hover any{" "}
-            <span className="mut">“source”</span> tag to see the passage a block
-            was grounded in.
+          <p className="sub" style={{ marginBottom: 0 }}>
+            {generatedCount} lessons generated for {fmtUsd(totals.costUsd)}. Tap a lesson to take it — the quizzes and scenarios really work.
           </p>
         </div>
+        <div className="ov-progress">
+          <div className="top">
+            <span className="pct">{pct}% complete</span>
+            <span className="pts">★ {points} pts</span>
+          </div>
+          <div className="pbar">
+            <div className="fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="dim small" style={{ marginTop: 8 }}>
+            {lessonsDone} of {generatedCount} lessons done
+          </div>
+        </div>
+      </div>
+
+      {outline.modules.map((m, mi) => (
+        <div className="ov-mod" key={m.id}>
+          <div className="omtag">
+            Module {mi + 1} · {m.title}
+          </div>
+          {m.lessons.map((l, li) => {
+            if (!lessons[l.id]) return null;
+            const done = progress[l.id]?.done;
+            const steps = lessons[l.id].blocks.length;
+            return (
+              <button key={l.id} className={`lcard ${done ? "done" : ""}`} onClick={() => onOpen(l.id)}>
+                <span className="lc-ic">{done ? "✓" : li + 1}</span>
+                <span className="lc-body">
+                  <b>{l.title}</b>
+                  <span>
+                    {steps} steps{done ? " · completed" : ""}
+                  </span>
+                </span>
+                <span className="lc-go">{done ? "↻" : "→"}</span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+
+      <div className="actionbar">
         <div className="spacer" />
         <button className="btn primary" onClick={onPublish}>
           ✓ Publish course
         </button>
       </div>
-
-      <div className="review-grid">
-        <nav className="side">
-          {outline.modules.map((m) => (
-            <div key={m.id}>
-              <div className="smod">{m.title}</div>
-              {m.lessons.map((l) =>
-                lessons[l.id] ? (
-                  <button
-                    key={l.id}
-                    className={`sitem ${active === l.id ? "active" : ""}`}
-                    onClick={() => setActive(l.id)}
-                  >
-                    <span className="dot">●</span>
-                    {l.title}
-                  </button>
-                ) : null,
-              )}
-            </div>
-          ))}
-        </nav>
-
-        <main className="lesson-main">
-          {lesson ? (
-            <>
-              <h2>{lesson.title}</h2>
-              <div className="lobj">{lesson.objective}</div>
-              {lesson.blocks.map((b, i) => (
-                <BlockView key={i} block={b} />
-              ))}
-
-              <div className="regenbar">
-                <input
-                  placeholder='Regenerate this lesson: e.g. "simpler language", "add a banking example"'
-                  value={regenText}
-                  onChange={(e) => setRegenText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") onRegenerate(lesson.id);
-                  }}
-                  disabled={regenBusy}
-                />
-                <button
-                  className="btn sm"
-                  onClick={() => onRegenerate(lesson.id)}
-                  disabled={regenBusy || !regenText.trim()}
-                >
-                  {regenBusy ? <span className="spin-inline" /> : "↻"} Regenerate
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="mut">Select a lesson.</p>
-          )}
-        </main>
-      </div>
     </>
   );
 }
 
-/* ---------------- Blocks ---------------- */
-function BlockView({ block }: { block: Block }) {
-  if (block.type === "text") {
+/* ---------------- Lesson player (step-by-step) ---------------- */
+function LessonPlayer(props: {
+  lesson: GeneratedLesson;
+  moduleTitle: string;
+  hasNext: boolean;
+  onClose: () => void;
+  onComplete: () => void;
+  onNext: () => void;
+  onRegenerate: (instruction: string) => Promise<void>;
+}) {
+  const { lesson, moduleTitle, hasNext, onClose, onComplete, onNext, onRegenerate } = props;
+  const blocks = lesson.blocks;
+  const total = blocks.length;
+  const [stepIdx, setStepIdx] = useState(0); // 0..total-1, then total = complete screen
+  const [satisfied, setSatisfied] = useState<Record<number, boolean>>({});
+  const [regen, setRegen] = useState("");
+  const [regenBusy, setRegenBusy] = useState(false);
+
+  useEffect(() => {
+    setStepIdx(0);
+    setSatisfied({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson.id]);
+
+  const atComplete = stepIdx >= total;
+  const block = atComplete ? null : blocks[stepIdx];
+  const requiresInteraction = block ? block.type === "quiz_check" || block.type === "scenario" : false;
+  const canContinue = !requiresInteraction || satisfied[stepIdx];
+  const progressPct = Math.round(((atComplete ? total : stepIdx) / total) * 100);
+
+  const markSatisfied = () => setSatisfied((s) => ({ ...s, [stepIdx]: true }));
+
+  const next = () => {
+    if (stepIdx + 1 >= total) {
+      onComplete();
+      setStepIdx(total);
+    } else {
+      setStepIdx(stepIdx + 1);
+    }
+  };
+  const back = () => {
+    if (stepIdx === 0) onClose();
+    else setStepIdx(Math.max(0, stepIdx - 1));
+  };
+
+  const doRegen = async () => {
+    if (!regen.trim()) return;
+    setRegenBusy(true);
+    try {
+      await onRegenerate(regen.trim());
+      setRegen("");
+      setStepIdx(0);
+      setSatisfied({});
+    } finally {
+      setRegenBusy(false);
+    }
+  };
+
+  return (
+    <div className="player">
+      <div className="pl-top">
+        <button className="pl-close" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+        <div className="pl-titlewrap">
+          <b>{lesson.title}</b>
+          <div className="pl-step">{atComplete ? "Complete" : `Step ${stepIdx + 1} of ${total} · ${moduleTitle}`}</div>
+        </div>
+      </div>
+      <div className="pl-progressline">
+        <div className="fill" style={{ width: `${progressPct}%` }} />
+      </div>
+
+      <div className="pl-body">
+        <div className="pl-inner" key={atComplete ? "done" : stepIdx}>
+          {atComplete ? (
+            <div className="pl-complete">
+              <div className="medal">★</div>
+              <h2>Lesson complete</h2>
+              <div className="earn">+{POINTS_PER_LESSON} points</div>
+              <p className="mut" style={{ marginBottom: 20 }}>
+                Nice work. You finished <b>{lesson.title}</b>.
+              </p>
+              <div className="regenbar" style={{ justifyContent: "center", marginBottom: 16 }}>
+                <input placeholder='Regenerate this lesson: e.g. "simpler language"' value={regen} onChange={(e) => setRegen(e.target.value)} disabled={regenBusy} />
+                <button className="btn sm" onClick={doRegen} disabled={regenBusy || !regen.trim()}>
+                  {regenBusy ? <span className="spin-inline" /> : "↻"} Regenerate
+                </button>
+              </div>
+              <div className="row" style={{ justifyContent: "center" }}>
+                <button className="btn" onClick={onClose}>
+                  Back to course
+                </button>
+                {hasNext && (
+                  <button className="btn primary" onClick={onNext}>
+                    Next lesson →
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <StepBlock block={block!} index={stepIdx} onSatisfied={markSatisfied} />
+          )}
+        </div>
+      </div>
+
+      {!atComplete && (
+        <div className="pl-bottom">
+          <button className="btn back" onClick={back}>
+            {stepIdx === 0 ? "✕" : "←"}
+          </button>
+          <button className="btn primary" onClick={next} disabled={!canContinue}>
+            {stepIdx + 1 >= total ? "Finish lesson ✓" : "Continue →"}
+          </button>
+        </div>
+      )}
+      {!atComplete && requiresInteraction && !satisfied[stepIdx] && <div className="gate-hint" style={{ paddingBottom: 10 }}>Answer to continue</div>}
+    </div>
+  );
+}
+
+/* ---------------- one step ---------------- */
+function StepBlock({ block, index, onSatisfied }: { block: Block; index: number; onSatisfied: () => void }) {
+  if (block.type === "text")
     return (
-      <div className="block">
-        {block.heading && (
-          <div className="bhead">
-            {block.heading}
-            <SourceRef text={block.sourceRef} />
-          </div>
-        )}
+      <div className="pblock">
+        <StepKicker label="Learn" sourceRef={block.sourceRef} />
+        {block.heading && <h3>{block.heading}</h3>}
         <div className="prose">
           <MarkdownLite text={block.markdown || ""} />
         </div>
-        {!block.heading && block.sourceRef && (
-          <div style={{ textAlign: "right", marginTop: 4 }}>
-            <SourceRef text={block.sourceRef} />
-          </div>
-        )}
       </div>
     );
-  }
-  if (block.type === "quiz_check") return <QuizCheck block={block} />;
-  if (block.type === "flashcards") return <Flashcards block={block} />;
-  if (block.type === "scenario") return <Scenario block={block} />;
+  if (block.type === "quiz_check") return <QuizStep block={block} onSatisfied={onSatisfied} key={index} />;
+  if (block.type === "flashcards")
+    return (
+      <div className="pblock">
+        <StepKicker label="Key terms" sourceRef={block.sourceRef} />
+        <h3>Flip to learn the key terms</h3>
+        <div className="cards">
+          {(block.cards || []).map((c, i) => (
+            <FlashcardView key={i} card={c} />
+          ))}
+        </div>
+        <div className="flip-hint">Tap a card to flip it, then continue.</div>
+      </div>
+    );
+  if (block.type === "scenario") return <ScenarioStep block={block} onSatisfied={onSatisfied} key={index} />;
   return null;
 }
 
-function SourceRef({ text }: { text?: string }) {
-  if (!text) return null;
+function StepKicker({ label, sourceRef }: { label: string; sourceRef?: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <span className="srcref">
-      source
-      <span className="pop">
-        <b>Grounded in source</b>
-        {text}
-      </span>
-    </span>
+    <>
+      <div className="pl-kicker">
+        {label}
+        {sourceRef && (
+          <button className="srcref src" onClick={() => setOpen((o) => !o)}>
+            {open ? "hide source" : "source"}
+          </button>
+        )}
+      </div>
+      {open && sourceRef && (
+        <div className="srcpop">
+          <b>Grounded in source</b>
+          {sourceRef}
+        </div>
+      )}
+    </>
+  );
+}
+
+function QuizStep({ block, onSatisfied }: { block: Block; onSatisfied: () => void }) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const options = block.options || [];
+  const correct = block.correctIndex ?? 0;
+  return (
+    <div className="pblock">
+      <StepKicker label="Quick check" sourceRef={block.sourceRef} />
+      <div className="q">{block.question}</div>
+      {options.map((o, i) => {
+        const cls = picked === null ? "" : i === correct ? "correct" : i === picked ? "wrong" : "";
+        const mark = picked === null ? "" : i === correct ? "✓" : i === picked ? "✕" : "";
+        return (
+          <button
+            key={i}
+            className={`opt ${cls}`}
+            disabled={picked !== null}
+            onClick={() => {
+              setPicked(i);
+              onSatisfied();
+            }}
+          >
+            <span className="mark">{mark}</span>
+            {o}
+          </button>
+        );
+      })}
+      {picked !== null && block.explanation && (
+        <div className={`explain ${picked === correct ? "good" : "bad"}`}>
+          {picked === correct ? "Correct. " : "Not quite. "}
+          {block.explanation}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScenarioStep({ block, onSatisfied }: { block: Block; onSatisfied: () => void }) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const choices: ScenarioChoice[] = block.choices || [];
+  return (
+    <div className="pblock">
+      <StepKicker label="Scenario" sourceRef={block.sourceRef} />
+      <div className="sit">{block.situation}</div>
+      {choices.map((c, i) => {
+        const isPicked = picked === i;
+        const cls = isPicked ? `picked ${c.correct ? "good" : "bad"}` : "";
+        return (
+          <div key={i}>
+            <button
+              className={`choice ${cls}`}
+              disabled={picked !== null}
+              onClick={() => {
+                setPicked(i);
+                onSatisfied();
+              }}
+            >
+              {c.text}
+            </button>
+            {isPicked && (
+              <div className={`feedback ${c.correct ? "good" : "bad"}`}>
+                {c.correct ? "✓ " : "✗ "}
+                {c.feedback}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FlashcardView({ card }: { card: Flashcard }) {
+  const [flip, setFlip] = useState(false);
+  return (
+    <div className={`fcard ${flip ? "flip" : ""}`} onClick={() => setFlip(!flip)}>
+      <div className="fcard-in">
+        <div className="fface front">{card.front}</div>
+        <div className="fface back">{card.back}</div>
+      </div>
+    </div>
   );
 }
 
@@ -902,11 +954,9 @@ function MarkdownLite({ text }: { text: string }) {
   };
   for (const raw of lines) {
     const line = raw.trimEnd();
-    if (/^\s*[-*]\s+/.test(line)) {
-      list.push(line.replace(/^\s*[-*]\s+/, ""));
-    } else if (line.trim() === "") {
-      flush();
-    } else {
+    if (/^\s*[-*]\s+/.test(line)) list.push(line.replace(/^\s*[-*]\s+/, ""));
+    else if (line.trim() === "") flush();
+    else {
       flush();
       out.push(<p key={`p-${out.length}`}>{renderInline(line)}</p>);
     }
@@ -914,146 +964,59 @@ function MarkdownLite({ text }: { text: string }) {
   flush();
   return <>{out}</>;
 }
-
 function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
   return parts.map((p, i) => {
-    if (p.startsWith("**") && p.endsWith("**"))
-      return <strong key={i}>{p.slice(2, -2)}</strong>;
-    if (p.startsWith("*") && p.endsWith("*") && p.length > 2)
-      return <em key={i}>{p.slice(1, -1)}</em>;
+    if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    if (p.startsWith("*") && p.endsWith("*") && p.length > 2) return <em key={i}>{p.slice(1, -1)}</em>;
     return <span key={i}>{p}</span>;
   });
 }
 
-function QuizCheck({ block }: { block: Block }) {
-  const [picked, setPicked] = useState<number | null>(null);
-  const options = block.options || [];
-  const correct = block.correctIndex ?? 0;
+/* ---------------- key modal ---------------- */
+function KeyModal({ hasKey, onSave, onClose }: { hasKey: boolean; onSave: (k: string) => void; onClose: () => void }) {
+  const [val, setVal] = useState("");
   return (
-    <div className="block">
-      <div className="quiz">
-        <div className="q">
-          <span className="qtag">Quiz</span>
-          <span>{block.question}</span>
-          <SourceRef text={block.sourceRef} />
-        </div>
-        {options.map((o, i) => {
-          const cls =
-            picked === null
-              ? ""
-              : i === correct
-                ? "correct"
-                : i === picked
-                  ? "wrong"
-                  : "";
-          return (
-            <button
-              key={i}
-              className={`opt ${cls}`}
-              disabled={picked !== null}
-              onClick={() => setPicked(i)}
-            >
-              {o}
+    <div className="player" style={{ background: "rgba(6,10,15,.86)", justifyContent: "center", alignItems: "center", padding: 18 }} onClick={onClose}>
+      <div className="card" style={{ maxWidth: 460, width: "100%" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ fontFamily: "var(--serif)", fontSize: 20, marginBottom: 8 }}>{hasKey ? "Live mode is on" : "Enable live generation"}</h3>
+        <p className="mut small" style={{ marginBottom: 4 }}>
+          By default this demo runs in <b>mock mode</b> (canned content, no cost). To generate real courses from your uploads, paste your own Anthropic API key. It&apos;s stored only in this browser and sent only to Anthropic — never to any server.
+        </p>
+        <p className="note-inline" style={{ marginTop: 8 }}>
+          Get a key at console.anthropic.com → API Keys.
+        </p>
+        <label className="fld">Anthropic API key</label>
+        <input className="txt" type="password" placeholder="sk-ant-..." value={val} onChange={(e) => setVal(e.target.value)} autoFocus />
+        <div className="row" style={{ marginTop: 18 }}>
+          {hasKey && (
+            <button className="btn danger" onClick={() => onSave("")}>
+              Switch to mock
             </button>
-          );
-        })}
-        {picked !== null && block.explanation && (
-          <div className="explain">
-            {picked === correct ? "✓ Correct. " : "Not quite. "}
-            {block.explanation}
-          </div>
-        )}
+          )}
+          <div className="spacer" />
+          <button className="btn ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={() => onSave(val)} disabled={!val.trim()}>
+            Save key
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function Flashcards({ block }: { block: Block }) {
-  return (
-    <div className="block">
-      <div className="bhead">
-        Key terms
-        <SourceRef text={block.sourceRef} />
-      </div>
-      <div className="cards">
-        {(block.cards || []).map((c, i) => (
-          <FlashcardView key={i} card={c} />
-        ))}
-      </div>
-      <div className="flip-hint">Click a card to flip it.</div>
-    </div>
-  );
-}
-
-function FlashcardView({ card }: { card: Flashcard }) {
-  const [flip, setFlip] = useState(false);
-  return (
-    <div className={`fcard ${flip ? "flip" : ""}`} onClick={() => setFlip(!flip)}>
-      <div className="fcard-in">
-        <div className="fface front">{card.front}</div>
-        <div className="fface back">{card.back}</div>
-      </div>
-    </div>
-  );
-}
-
-function Scenario({ block }: { block: Block }) {
-  const [picked, setPicked] = useState<number | null>(null);
-  const choices: ScenarioChoice[] = block.choices || [];
-  return (
-    <div className="block">
-      <div className="bhead">
-        Scenario
-        <SourceRef text={block.sourceRef} />
-      </div>
-      <div className="scen">
-        <div className="sit">{block.situation}</div>
-        {choices.map((c, i) => {
-          const isPicked = picked === i;
-          const cls = isPicked ? `picked ${c.correct ? "good" : "bad"}` : "";
-          return (
-            <div key={i}>
-              <button
-                className={`choice ${cls}`}
-                disabled={picked !== null}
-                onClick={() => setPicked(i)}
-              >
-                {c.text}
-              </button>
-              {isPicked && (
-                <div className={`feedback ${c.correct ? "good" : "bad"}`}>
-                  {c.correct ? "✓ " : "✗ "}
-                  {c.feedback}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- Published ---------------- */
-function Published(props: {
-  outline: Outline;
-  totals: Totals;
-  count: number;
-  onReset: () => void;
-}) {
+/* ---------------- published ---------------- */
+function Published(props: { outline: Outline; totals: Totals; count: number; points: number; onReset: () => void }) {
   const { outline, totals, count, onReset } = props;
   return (
     <div className="card">
       <div className="published">
         <div className="chk">✓</div>
         <h2>Course published</h2>
-        <p className="mut" style={{ maxWidth: 480, margin: "0 auto 20px" }}>
-          <b>{outline.courseTitle}</b> — {count} lessons with working
-          interactions and exams, generated and reviewed for a total of{" "}
-          <span style={{ color: "var(--teal)" }}>{fmtUsd(totals.costUsd)}</span>.
-          In production it would now be assignable to learners with verifiable
-          certificates.
+        <p className="mut" style={{ maxWidth: 460, margin: "0 auto 20px" }}>
+          <b>{outline.courseTitle}</b> — {count} interactive lessons with quizzes, scenarios, and exams, generated and reviewed for {fmtUsd(totals.costUsd)}. In production it would now be assignable to learners with verifiable certificates.
         </p>
         <button className="btn" onClick={onReset}>
           Generate another course

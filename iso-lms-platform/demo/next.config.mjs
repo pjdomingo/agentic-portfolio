@@ -1,11 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Ensure the bundled sample document is included when the /api/extract route
-  // is traced for a serverless deploy (it reads the file at runtime).
-  outputFileTracingIncludes: {
-    "/api/extract": ["./sample/**"],
-  },
+  // Fully static site — no server. Everything runs in the browser, so this
+  // deploys as static files on Cloudflare Pages / any static host.
+  output: "export",
+  images: { unoptimized: true },
+  trailingSlash: true,
 };
 
 export default nextConfig;
