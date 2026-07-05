@@ -24,6 +24,7 @@ A Udemy/Coursera-style learning platform focused on **ISO and SOC compliance tra
 | [04-pricing-strategy.md](04-pricing-strategy.md) | Personal / Group / Enterprise tier design, payment-integration recommendation |
 | [05-tech-stack-and-costs.md](05-tech-stack-and-costs.md) | Tech stack, AI API cost model, domain/server costing at three growth stages |
 | [presentation.html](presentation.html) | One-page visual pitch of the plan (open in a browser) |
+| [demo/](demo/) | **Working AI demo** — a real Next.js app that generates an interactive course from an uploaded document (`cd demo && npm i && npm run dev`) |
 
 ## Headline numbers
 

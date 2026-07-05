@@ -1,0 +1,25 @@
+{
+  "name": "certifyhub-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Working AI course-generator demo for the ISO/SOC compliance LMS",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "next": "^15.5.20",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "unpdf": "^1.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.7.0"
+  }
+}
